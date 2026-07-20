@@ -2,37 +2,39 @@ name: Kyobo Stock Monitor
 
 on:
   schedule:
-    - cron: '*/10 * * * *' # 10분마다 실행
-  workflow_dispatch: # 웹에서 수동으로 실행해볼 수 있는 버튼 생성
+    # 10분마다 실행 (UTC 기준)
+    - cron: '*/10 * * * *'
+  workflow_dispatch: # 수동 실행 버튼 활성화
 
 jobs:
-  build:
+  monitor:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write # 파일 수정 권한 (stock_status.json 업데이트용)
 
     steps:
-    - name: 코드 가져오기
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: 파이썬 설정
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-    - name: 필요 패키지 설치
-      run: pip install -r requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests beautifulsoup4
 
-    - name: 재고 확인 스크립트 실행
-      env:
-        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      run: python monitor.py
+      - name: Run stock monitor script
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python monitor.py
 
-    - name: 변경된 재고 파일(stock_status.json) 저장
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git add stock_status.json
-        git diff-index --quiet HEAD || git commit -m "Update stock status [skip ci]"
-        git push
+      - name: Commit and push changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          # json과 csv 파일 모두 staging에 추가
+          git add stock_status.json stock_log.csv
+          # 변경사항이 있을 때만 커밋 및 푸시
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Update stock status and logs" && git push)

@@ -18,7 +18,7 @@ jobs:
     - name: 파이썬 설정
       uses: actions/setup-python@v5
       with:
-        python-version: '3.10'
+        python-version: '3.11'
 
     - name: 필요 패키지 설치
       run: pip install -r requirements.txt

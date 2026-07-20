@@ -1,9 +1,7 @@
 name: Kyobo Stock Monitor
 
 on:
-  schedule:
-    # 10분마다 실행 (UTC 기준)
-    - cron: '*/10 * * * *'
+
   workflow_dispatch: # 수동 실행 버튼 활성화
 
 jobs:

@@ -76,7 +76,7 @@ def main():
     now_kst = get_kst_now()
     current_hour = now_kst.hour
 
-    if current_hour >= 23 or current_hour < 9:
+    if current_hour >= 22 or current_hour < 9:
         print(
             f"[{now_kst.strftime('%H:%M')}] 야간 시간대이므로 실행을 건너뜁니다."
         )

@@ -1,0 +1,38 @@
+name: Kyobo Stock Monitor
+
+on:
+  schedule:
+    - cron: '*/10 * * * *' # 10분마다 실행
+  workflow_dispatch: # 웹에서 수동으로 실행해볼 수 있는 버튼 생성
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # 파일 수정 권한 (stock_status.json 업데이트용)
+
+    steps:
+    - name: 코드 가져오기
+      uses: actions/checkout@v3
+
+    - name: 파이썬 설정
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: 필요 패키지 설치
+      run: pip install -r requirements.txt
+
+    - name: 재고 확인 스크립트 실행
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      run: python monitor.py
+
+    - name: 변경된 재고 파일(stock_status.json) 저장
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add stock_status.json
+        git diff-index --quiet HEAD || git commit -m "Update stock status [skip ci]"
+        git push

@@ -106,8 +106,9 @@ def main():
         current_all_stock[book_title] = current_stock
         total_qty = sum(current_stock.values())
 
-        # 1. CSV 기록 (도서명 포함)
-        append_to_csv(now_kst, book_title, current_stock)
+        # -------------------------------------------------------------
+        # [수정 1] 무조건 호출되던 append_to_csv(now_kst, book_title, current_stock) 제거
+        # -------------------------------------------------------------
 
         # 2. 9시 정기 메시지 구성
         if is_nine_am:
@@ -136,22 +137,39 @@ def main():
                         + "\n".join(book_changes)
                     )
 
-    # 메시지 발송 처리
+    # -------------------------------------------------------------
+    # [수정 2] 메시지 발송 및 CSV 조건부 기록 처리
+    # -------------------------------------------------------------
+    should_save_csv = False
+
+    # 1) 오전 9시 정기 알림 발생 시
     if is_nine_am and nine_am_messages:
         header = f"☀️ <b>[오전 9시 정기 재고 현황]</b>\n📅 {now_kst.strftime('%Y-%m-%d %H:%M')}\n\n"
         send_telegram(header + "\n\n".join(nine_am_messages))
+        should_save_csv = True
 
+    # 2) 재고 변동 발생 시
     elif all_changes:
         header = f"🚨 <b>[교보문고 재고 변동 알림]</b>\n⏰ {now_kst.strftime('%Y-%m-%d %H:%M')}\n\n"
         send_telegram(header + "\n\n".join(all_changes))
+        should_save_csv = True
+
+    # 3) 최초 실행이거나 상태 기준점이 없는 경우 (기준점 기록용)
+    elif not prev_all_stock and current_all_stock:
+        should_save_csv = True
 
     else:
         if not is_nine_am:
-            print("재고 변동 없음")
+            print("재고 변동 없음 (CSV 및 JSON 저장 스킵)")
 
-    # 최신 전체 상태를 JSON 파일에 저장
-    with open(STATUS_FILE, "w", encoding="utf-8") as f:
-        json.dump(current_all_stock, f, ensure_ascii=False, indent=2)
+    # 업데이트 요소가 있을 때만 CSV 및 JSON 기록
+    if should_save_csv:
+        for book_title, stock_data in current_all_stock.items():
+            append_to_csv(now_kst, book_title, stock_data)
+
+        # 최신 전체 상태를 JSON 파일에 저장
+        with open(STATUS_FILE, "w", encoding="utf-8") as f:
+            json.dump(current_all_stock, f, ensure_ascii=False, indent=2)
 
 
 if __name__ == "__main__":

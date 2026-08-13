@@ -24,16 +24,9 @@ jobs:
 
       - name: Run stock monitor script
         env:
-          BOOKS_JSON: ${{ secrets.BOOKS_JSON }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          BOOKS_JSON: ${{ secrets.BOOKS_JSON }}
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+          GIST_ID: ${{ secrets.GIST_ID }}
         run: python monitor.py
-
-      - name: Commit and push changes
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          # json과 csv 파일 모두 staging에 추가
-          git add stock_status.json stock_log.csv
-          # 변경사항이 있을 때만 커밋 및 푸시
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Update stock status and logs" && git push)

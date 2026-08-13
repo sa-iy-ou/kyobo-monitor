@@ -24,6 +24,7 @@ jobs:
 
       - name: Run stock monitor script
         env:
+          BOOKS_JSON: ${{ secrets.BOOKS_JSON }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python monitor.py

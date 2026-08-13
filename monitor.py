@@ -14,7 +14,8 @@ GIST_ID = os.getenv("GIST_ID")
 
 try:
     BOOKS = json.loads(BOOKS_JSON)
-except Exception:
+except Exception as e:
+    print(f"도서 목록 파싱 실패: {e}")
     BOOKS = {}
 
 HEADERS = {
@@ -23,35 +24,65 @@ HEADERS = {
 }
 
 
-# 2. Gist API 관련 함수
+# 2. Gist API 함수 (데이터 로드 및 업데이트)
 def get_gist_data():
     """Gist에서 json과 csv 내용 불러오기"""
     url = f"https://api.github.com/gists/{GIST_ID}"
-    headers = {"Authorization": f"token {GIST_TOKEN}"}
-    response = requests.get(url, headers=headers, timeout=10)
-    if response.status_code == 200:
-        files = response.json().get("files", {})
-        json_content = files.get("stock_status.json", {}).get("content", "{}")
-        csv_content = files.get("stock_log.csv", {}).get(
-            "content", "일시,도서명,지점명,재고수량\n"
-        )
-        return json.loads(json_content), csv_content
+    headers = {
+        "Authorization": f"token {GIST_TOKEN}",
+        "Accept": "application/vnd.github.v3+json",
+    }
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            files = response.json().get("files", {})
+
+            # json 가져오기
+            json_file = files.get("stock_status.json", {})
+            json_str = json_file.get("content", "{}") if json_file else "{}"
+            try:
+                prev_stock = json.loads(json_str)
+            except Exception:
+                prev_stock = {}
+
+            # csv 가져오기
+            csv_file = files.get("stock_log.csv", {})
+            csv_str = (
+                csv_file.get("content", "일시,도서명,지점명,재고수량\n")
+                if csv_file
+                else "일시,도서명,지점명,재고수량\n"
+            )
+
+            return prev_stock, csv_str
+    except Exception as e:
+        print(f"Gist 데이터 로드 실패: {e}")
+
     return {}, "일시,도서명,지점명,재고수량\n"
 
 
-def update_gist_data(status_dict, new_csv_content):
+def update_gist_data(status_dict, updated_csv_content):
     """Gist 파일 업데이트"""
     url = f"https://api.github.com/gists/{GIST_ID}"
-    headers = {"Authorization": f"token {GIST_TOKEN}"}
+    headers = {
+        "Authorization": f"token {GIST_TOKEN}",
+        "Accept": "application/vnd.github.v3+json",
+    }
     payload = {
         "files": {
             "stock_status.json": {
                 "content": json.dumps(status_dict, ensure_ascii=False, indent=2)
             },
-            "stock_log.csv": {"content": new_csv_content},
+            "stock_log.csv": {"content": updated_csv_content},
         }
     }
-    requests.patch(url, headers=headers, json=payload, timeout=10)
+    try:
+        res = requests.patch(url, headers=headers, json=payload, timeout=10)
+        if res.status_code != 200:
+            print(f"Gist 업데이트 실패 (상태 코드: {res.status_code}): {res.text}")
+        else:
+            print("Gist 업데이트 성공")
+    except Exception as e:
+        print(f"Gist 업데이트 요청 실패: {e}")
 
 
 def send_telegram(message):
@@ -101,7 +132,7 @@ def main():
         )
         return
 
-    # Gist에서 기존 데이터 로드
+    # Gist에서 이전 데이터 가져오기
     prev_all_stock, current_csv_content = get_gist_data()
 
     current_all_stock = {}
@@ -142,27 +173,31 @@ def main():
                         + "\n".join(book_changes)
                     )
 
-    should_save_csv = False
+    should_save = False
 
+    # 1) 9시 정기 보고
     if is_nine_am and nine_am_messages:
         header = f"☀️ <b>[오전 9시 정기 재고 현황]</b>\n📅 {now_kst.strftime('%Y-%m-%d %H:%M')}\n\n"
         send_telegram(header + "\n\n".join(nine_am_messages))
-        should_save_csv = True
+        should_save = True
 
+    # 2) 재고 변동 발생 시
     elif all_changes:
         header = f"🚨 <b>[교보문고 재고 변동 알림]</b>\n⏰ {now_kst.strftime('%Y-%m-%d %H:%M')}\n\n"
         send_telegram(header + "\n\n".join(all_changes))
-        should_save_csv = True
+        should_save = True
 
+    # 3) 최초 실행 또는 이전 기록이 없는 경우
     elif not prev_all_stock and current_all_stock:
-        should_save_csv = True
+        print("이전 재고 기록이 없어 현재 재고 상태를 기준점으로 Gist에 저장합니다.")
+        should_save = True
 
     else:
         if not is_nine_am:
-            print("재고 변동 없음 (Gist 저장 스킵)")
+            print("재고 변동 없음 (Gist 업데이트 스킵)")
 
-    # 업데이트 시 CSV 문자열 이어붙인 후 Gist 업데이트
-    if should_save_csv:
+    # 데이터 업데이트
+    if should_save:
         timestamp = now_kst.strftime("%Y-%m-%d %H:%M:%S")
         output = io.StringIO()
         writer = csv.writer(output)
@@ -171,8 +206,13 @@ def main():
             for store_name, qty in stock_data.items():
                 writer.writerow([timestamp, book_title, store_name, qty])
 
-        new_rows = output.getvalue()
-        updated_csv_content = current_csv_content + new_rows
+        new_csv_rows = output.getvalue()
+
+        # CSV 줄바꿈 안전 처리
+        if current_csv_content and not current_csv_content.endswith("\n"):
+            current_csv_content += "\n"
+
+        updated_csv_content = current_csv_content + new_csv_rows
 
         update_gist_data(current_all_stock, updated_csv_content)
 

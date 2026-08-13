@@ -1,27 +1,57 @@
 import csv
+import io
 import json
 import os
 from datetime import datetime, timedelta, timezone
 import requests
 
-# 1. 모니터링할 도서 목록 (BOOK_ID: "표시할 도서명")
-BOOKS_JSON = os.getenv("BOOKS_JSON", "{}")
-try:
-    BOOKS = json.loads(BOOKS_JSON)
-except Exception as e:
-    print(f"도서 목록 파싱 실패: {e}")
-    BOOKS = {}
-
+# 1. 환경 변수 로드
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+BOOKS_JSON = os.getenv("BOOKS_JSON", "{}")
+GIST_TOKEN = os.getenv("GIST_TOKEN")
+GIST_ID = os.getenv("GIST_ID")
 
-STATUS_FILE = "stock_status.json"
-LOG_FILE = "stock_log.csv"
+try:
+    BOOKS = json.loads(BOOKS_JSON)
+except Exception:
+    BOOKS = {}
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
     "Accept": "application/json, text/plain, */*",
 }
+
+
+# 2. Gist API 관련 함수
+def get_gist_data():
+    """Gist에서 json과 csv 내용 불러오기"""
+    url = f"https://api.github.com/gists/{GIST_ID}"
+    headers = {"Authorization": f"token {GIST_TOKEN}"}
+    response = requests.get(url, headers=headers, timeout=10)
+    if response.status_code == 200:
+        files = response.json().get("files", {})
+        json_content = files.get("stock_status.json", {}).get("content", "{}")
+        csv_content = files.get("stock_log.csv", {}).get(
+            "content", "일시,도서명,지점명,재고수량\n"
+        )
+        return json.loads(json_content), csv_content
+    return {}, "일시,도서명,지점명,재고수량\n"
+
+
+def update_gist_data(status_dict, new_csv_content):
+    """Gist 파일 업데이트"""
+    url = f"https://api.github.com/gists/{GIST_ID}"
+    headers = {"Authorization": f"token {GIST_TOKEN}"}
+    payload = {
+        "files": {
+            "stock_status.json": {
+                "content": json.dumps(status_dict, ensure_ascii=False, indent=2)
+            },
+            "stock_log.csv": {"content": new_csv_content},
+        }
+    }
+    requests.patch(url, headers=headers, json=payload, timeout=10)
 
 
 def send_telegram(message):
@@ -61,19 +91,6 @@ def fetch_stock(book_id):
         return {}
 
 
-def append_to_csv(now_kst, book_title, current_stock):
-    file_exists = os.path.exists(LOG_FILE)
-    timestamp = now_kst.strftime("%Y-%m-%d %H:%M:%S")
-
-    with open(LOG_FILE, "a", encoding="utf-8-sig", newline="") as f:
-        writer = csv.writer(f)
-        if not file_exists:
-            writer.writerow(["일시", "도서명", "지점명", "재고수량"])
-
-        for store_name, qty in current_stock.items():
-            writer.writerow([timestamp, book_title, store_name, qty])
-
-
 def main():
     now_kst = get_kst_now()
     current_hour = now_kst.hour
@@ -84,14 +101,8 @@ def main():
         )
         return
 
-    # 기존 JSON 상태 데이터 로드
-    prev_all_stock = {}
-    if os.path.exists(STATUS_FILE):
-        try:
-            with open(STATUS_FILE, "r", encoding="utf-8") as f:
-                prev_all_stock = json.load(f)
-        except Exception:
-            prev_all_stock = {}
+    # Gist에서 기존 데이터 로드
+    prev_all_stock, current_csv_content = get_gist_data()
 
     current_all_stock = {}
     all_changes = []
@@ -99,7 +110,6 @@ def main():
 
     is_nine_am = current_hour == 9 and now_kst.minute < 10
 
-    # 도서별 순회 로직
     for book_id, book_title in BOOKS.items():
         current_stock = fetch_stock(book_id)
         if not current_stock:
@@ -108,18 +118,11 @@ def main():
         current_all_stock[book_title] = current_stock
         total_qty = sum(current_stock.values())
 
-        # -------------------------------------------------------------
-        # [수정 1] 무조건 호출되던 append_to_csv(now_kst, book_title, current_stock) 제거
-        # -------------------------------------------------------------
-
-        # 2. 9시 정기 메시지 구성
         if is_nine_am:
             lines = [f"📚 <b>[{book_title}]</b> (총 {total_qty}권)"]
             for name, qty in current_stock.items():
                 lines.append(f"{name:<10} : {qty}권")
             nine_am_messages.append("\n".join(lines))
-
-        # 3. 변동 알림 메시지 구성
         else:
             prev_stock = prev_all_stock.get(book_title, {})
             if prev_stock:
@@ -139,39 +142,39 @@ def main():
                         + "\n".join(book_changes)
                     )
 
-    # -------------------------------------------------------------
-    # [수정 2] 메시지 발송 및 CSV 조건부 기록 처리
-    # -------------------------------------------------------------
     should_save_csv = False
 
-    # 1) 오전 9시 정기 알림 발생 시
     if is_nine_am and nine_am_messages:
         header = f"☀️ <b>[오전 9시 정기 재고 현황]</b>\n📅 {now_kst.strftime('%Y-%m-%d %H:%M')}\n\n"
         send_telegram(header + "\n\n".join(nine_am_messages))
         should_save_csv = True
 
-    # 2) 재고 변동 발생 시
     elif all_changes:
         header = f"🚨 <b>[교보문고 재고 변동 알림]</b>\n⏰ {now_kst.strftime('%Y-%m-%d %H:%M')}\n\n"
         send_telegram(header + "\n\n".join(all_changes))
         should_save_csv = True
 
-    # 3) 최초 실행이거나 상태 기준점이 없는 경우 (기준점 기록용)
     elif not prev_all_stock and current_all_stock:
         should_save_csv = True
 
     else:
         if not is_nine_am:
-            print("재고 변동 없음 (CSV 및 JSON 저장 스킵)")
+            print("재고 변동 없음 (Gist 저장 스킵)")
 
-    # 업데이트 요소가 있을 때만 CSV 및 JSON 기록
+    # 업데이트 시 CSV 문자열 이어붙인 후 Gist 업데이트
     if should_save_csv:
-        for book_title, stock_data in current_all_stock.items():
-            append_to_csv(now_kst, book_title, stock_data)
+        timestamp = now_kst.strftime("%Y-%m-%d %H:%M:%S")
+        output = io.StringIO()
+        writer = csv.writer(output)
 
-        # 최신 전체 상태를 JSON 파일에 저장
-        with open(STATUS_FILE, "w", encoding="utf-8") as f:
-            json.dump(current_all_stock, f, ensure_ascii=False, indent=2)
+        for book_title, stock_data in current_all_stock.items():
+            for store_name, qty in stock_data.items():
+                writer.writerow([timestamp, book_title, store_name, qty])
+
+        new_rows = output.getvalue()
+        updated_csv_content = current_csv_content + new_rows
+
+        update_gist_data(current_all_stock, updated_csv_content)
 
 
 if __name__ == "__main__":

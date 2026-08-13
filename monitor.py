@@ -5,10 +5,12 @@ from datetime import datetime, timedelta, timezone
 import requests
 
 # 1. 모니터링할 도서 목록 (BOOK_ID: "표시할 도서명")
-BOOKS = {
-    "S000220562985": "폐놀이공원의 살인",
-    # "S000XXXXXXXXX": "책 이름 2",  # 필요시 계속 추가 가능
-}
+BOOKS_JSON = os.getenv("BOOKS_JSON", "{}")
+try:
+    BOOKS = json.loads(BOOKS_JSON)
+except Exception as e:
+    print(f"도서 목록 파싱 실패: {e}")
+    BOOKS = {}
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")

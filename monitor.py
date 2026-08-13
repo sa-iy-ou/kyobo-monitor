@@ -42,7 +42,10 @@ def get_gist_data():
             json_str = json_file.get("content", "{}") if json_file else "{}"
             try:
                 prev_stock = json.loads(json_str)
-            except Exception:
+            except Exception as parse_err:
+                print(
+                    f"⚠️ Gist JSON 파싱 실패 (문법 오류 가능성): {parse_err}"
+                )
                 prev_stock = {}
 
             # csv 가져오기
@@ -54,8 +57,10 @@ def get_gist_data():
             )
 
             return prev_stock, csv_str
+        else:
+            print(f"Gist 읽기 실패 (상태 코드 {response.status_code})")
     except Exception as e:
-        print(f"Gist 데이터 로드 실패: {e}")
+        print(f"Gist 데이터 로드 예외 발생: {e}")
 
     return {}, "일시,도서명,지점명,재고수량\n"
 
@@ -95,9 +100,13 @@ def send_telegram(message):
         "parse_mode": "HTML",
     }
     try:
-        requests.post(telegram_url, json=payload, timeout=10)
+        res = requests.post(telegram_url, json=payload, timeout=10)
+        if res.status_code == 200:
+            print("텔레그램 알림 전송 성공")
+        else:
+            print(f"텔레그램 전송 실패 (상태 코드 {res.status_code}): {res.text}")
     except Exception as e:
-        print(f"텔레그램 전송 실패: {e}")
+        print(f"텔레그램 전송 중 예외 발생: {e}")
 
 
 def get_kst_now():

@@ -217,26 +217,26 @@ def main():
 
         new_csv_rows = output.getvalue()
 
-    # CSV 줄바꿈 안전 처리
-    if current_csv_content and not current_csv_content.endswith("\n"):
-        current_csv_content += "\n"
+        # CSV 줄바꿈 안전 처리
+        if current_csv_content and not current_csv_content.endswith("\n"):
+            current_csv_content += "\n"
 
-    # 전체 행 합치기
-    full_csv = current_csv_content + new_csv_rows
-    lines = full_csv.strip().split("\n")
+        # 전체 행 합치기
+        full_csv = current_csv_content + new_csv_rows
+        lines = full_csv.strip().split("\n")
 
-    # 헤더와 데이터 분리
-    header = lines[0] if lines else "일시,도서명,지점명,재고수량"
-    data_lines = lines[1:]
+        # 헤더와 데이터 분리
+        header = lines[0] if lines else "일시,도서명,지점명,재고수량"
+        data_lines = lines[1:]
 
-    # 최근 1,000개 행만 유지 (용량 초과 방지)
-    MAX_ROWS = 1000
-    if len(data_lines) > MAX_ROWS:
-        data_lines = data_lines[-MAX_ROWS:]
+        # 최근 1,000개 행만 유지 (용량 초과 방지)
+        MAX_ROWS = 1000
+        if len(data_lines) > MAX_ROWS:
+            data_lines = data_lines[-MAX_ROWS:]
 
-    updated_csv_content = header + "\n" + "\n".join(data_lines) + "\n"
+        updated_csv_content = header + "\n" + "\n".join(data_lines) + "\n"
 
-    update_gist_data(current_all_stock, updated_csv_content)
+        update_gist_data(current_all_stock, updated_csv_content)
 
 
 if __name__ == "__main__":
